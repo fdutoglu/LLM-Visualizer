@@ -1,8 +1,13 @@
-# Gemma 3 Embedding Görselleştirici
+# LLM Visualizer
 
 Gemma 3 270M'in sözcük vektörlerini ve cümle içindeki gizli durumlarını tarayıcıda gösterir. Sayfa kendi bilgisayarınızda çalışır.
 
 ## Başlatma
+
+```bash
+git clone https://github.com/fdutoglu/LLM-Visualizer.git
+cd LLM-Visualizer
+```
 
 Python 3.12 veya üstü gerekir (3.14 ile denendi). Linux / macOS:
 
