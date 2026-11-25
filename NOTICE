@@ -1,0 +1,7 @@
+Gemma is provided under and subject to the Gemma Terms of Use found at gemma.ai/resources/terms
+
+viz/axes.json, viz/axes.pt and the JSON files under axes/ were derived from the weights of Gemma 3 270M
+(unsloth/gemma-3-270m-it). They are modified/derived files, not original Gemma files.
+Their use and distribution are subject to the Gemma Terms of Use (copy: GEMMA_TERMS.txt), including the use
+restrictions in Section 3.2 and the Gemma Prohibited Use Policy (gemma.ai/resources/prohibited_use_policy).
+The model weights themselves are not included; they are downloaded from Hugging Face on first start.

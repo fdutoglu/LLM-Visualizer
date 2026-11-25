@@ -1,0 +1,7 @@
+venv/
+.venv/
+model/
+__pycache__/
+*.pyc
+*.log
+axes/ica.pt
