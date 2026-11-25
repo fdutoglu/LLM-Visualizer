@@ -1,8 +1,8 @@
-"""Eksen ölçümü çekirdeği (saf fonksiyonlar; model gerektirmez).
-fastica(Z, seed): beyazlatılmış Z [n,d] -> dik W [d,d]; kaynaklar Z@W.T (simetrik FastICA, logcosh).
-auc_matrix(S, Y): S [n,d] puan, Y [n,L] bool -> AUC [d,L] (eşitliklerde ortalama sıra).
-prec_at(S, Y, k): her eksenin '+' ucundaki ilk k[l] tokendaki etiket payı [d,L].
-split_groups(keys, seed): aynı anahtar hep aynı yarıda; True = eğitim."""
+"""Core of the axis measurement (pure functions; needs no model).
+fastica(Z, seed): whitened Z [n,d] -> orthogonal W [d,d]; sources Z@W.T (symmetric FastICA, logcosh).
+auc_matrix(S, Y): S [n,d] scores, Y [n,L] bool -> AUC [d,L] (average rank for ties).
+prec_at(S, Y, k): label share among the first k[l] tokens at the '+' end of each axis [d,L].
+split_groups(keys, seed): the same key is always in the same half; True = training."""
 import hashlib
 import torch
 
@@ -28,7 +28,7 @@ def fastica(Z, seed=0, iters=200, tol=1e-4):
     return W, it + 1, lim
 
 def ranks(x):
-    """Artan ortalama sıra (1'den)."""
+    """Ascending average rank (from 1)."""
     v, inv, c = torch.unique(x, return_inverse=True, return_counts=True)
     e = c.cumsum(0); return (e.double() - (c.double() - 1) / 2)[inv]
 
@@ -46,5 +46,5 @@ def split_groups(keys, seed="0"):
     return torch.tensor([hashlib.sha256((seed + k).encode()).digest()[0] < 128 for k in keys])
 
 def match(A, B):
-    """İki birim-satırlı yön kümesi: A'nın her satırının B'deki en iyi |kosinüsü|."""
+    """Two sets of directions with unit rows: the best |cosine| in B for each row of A."""
     return (A @ B.T).abs().max(1).values

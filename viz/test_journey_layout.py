@@ -3,7 +3,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import journey_layout as jl
 
 def scene(L=4, k=5, shared=2, gap=0.0):
-    """Duzlemde bilinen sahne: duraklar yan yana, ardisik karelerde ortak token olsun; gap = duzlem disi ortak pay."""
+    """A known scene in the plane: stops side by side, consecutive frames share tokens; gap = common out-of-plane part."""
     g = torch.Generator().manual_seed(1)
     S = torch.stack([torch.arange(L) * 0.5, torch.zeros(L)], 1).float()
     X = torch.cat([S[l] + 0.28 * torch.randn(k, 2, generator=g).clamp(-1, 1) for l in range(L)])
@@ -38,7 +38,7 @@ class P(unittest.TestCase):
         V = torch.ones(2, 4) / 2; P, ts, A = jl.slerp_stops(V, 0.15)
         self.assertTrue(torch.isfinite(P).all()); self.assertEqual(ts, [0.0, 0.5, 1.0])
     def test_small_raw_distance_wins_conflict(self):
-        # ayni token durak 0'a ham 0, durak 1'e ham 0.75 (ortak pay sonrasi 0.02); duraklar uzak olmali -> token durak 0'da kalir
+        # the same token is at raw 0 from stop 0 and raw 0.75 from stop 1 (0.02 after the common part); the stops must be apart -> the token stays at stop 0
         R = torch.tensor([[0.0, 0.4, 0.4, 0.4, 1.0, 1.0], [0.75, 1.0, 1.0, 1.0, 0.78, 0.78]])
         M = torch.tensor([[1, 1, 1, 1, 0, 0], [1, 0, 0, 0, 1, 1]]).bool()
         o = jl.layout(R, 1 - torch.eye(6), 1 - torch.eye(2), M, A=torch.tensor([2.0]), ws=10.0)
@@ -48,7 +48,7 @@ class P(unittest.TestCase):
         self.assertEqual(jl.order_acc(S, X, torch.tensor([[.1, .2, .3, .4]])), [(True, 1.0)])
         self.assertEqual(jl.order_acc(S, X, torch.tensor([[.4, .1, .2, .3]])), [(False, 2 / 3)])
     def test_rank_term_orders_close_neighbors(self):
-        # 8 komsu, uzakliklari neredeyse esit, hepsi birbirinden uzak: 2B'de sira ancak terimle korunur
+        # 8 neighbours at almost equal distances, all far from each other: in 2D only the term keeps their order
         n = 8; R = (0.9 + 0.005 * torch.arange(n))[None]; DT = 0.8 * (1 - torch.eye(n)); DS = torch.zeros(1, 1); M = torch.ones(1, n, dtype=torch.bool)
         o = jl.layout(R, DT, DS, M, K=torch.tensor([True]), wr=1.0)
         d = torch.cdist(o["S"], o["X"])[0]; self.assertEqual(d.topk(5, largest=False).indices.tolist(), [0, 1, 2, 3, 4])

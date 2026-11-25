@@ -11,4 +11,4 @@ with safe_open(f"{d}/model.safetensors", "pt") as f:
         total += n
         if ".layers." not in k or ".layers.0." in k:
             print(f"{k:70s} {str(sh):18s} {s.get_dtype()}")
-print("toplam parametre:", total, f"({total/1e6:.1f}M)")
+print("total parameters:", total, f"({total/1e6:.1f}M)")

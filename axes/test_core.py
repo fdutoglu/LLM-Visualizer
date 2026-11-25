@@ -2,7 +2,7 @@ import sys, os, unittest, torch
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import core as c
 class T(unittest.TestCase):
-    def test_ica_bilinen_kaynaklar(self):
+    def test_ica_known_sources(self):
         g = torch.Generator().manual_seed(1); n = 20000
         S = torch.stack([torch.rand(n, generator=g) - .5, torch.randn(n, generator=g)**3, torch.sign(torch.randn(n, generator=g))*-torch.rand(n, generator=g).log()], 1).double()
         X = S @ torch.randn(3, 3, generator=g, dtype=torch.double)
@@ -17,7 +17,7 @@ class T(unittest.TestCase):
         S = torch.tensor([[1., 3], [2, 2], [3, 1], [4, 0]]); Y = torch.tensor([[0], [0], [1], [1]]).bool()
         self.assertEqual(c.auc_matrix(S, Y).tolist(), [[1.], [0.]])
         self.assertEqual(c.auc_matrix(torch.ones(4, 1), Y).item(), .5)
-    def test_auc_kaba_kuvvet(self):
+    def test_auc_brute_force(self):
         S = torch.randint(0, 5, (40, 2)).float(); Y = torch.rand(40, 3) > .6; A = c.auc_matrix(S, Y)
         for d in range(2):
             for l in range(3):
@@ -26,6 +26,6 @@ class T(unittest.TestCase):
     def test_prec(self):
         S = torch.tensor([[4.], [3], [2], [1]]); Y = torch.tensor([[1, 0], [0, 1], [1, 1], [0, 0]]).bool()
         self.assertEqual(c.prec_at(S, Y, [1, 2]).tolist(), [[1., .5]])
-    def test_bolme(self):
+    def test_split(self):
         k = ["a", "b", "a"] + [str(i) for i in range(2000)]; s = c.split_groups(k); self.assertEqual(s[0], s[2]); self.assertTrue(.45 < s.float().mean() < .55)
 if __name__ == "__main__": unittest.main()

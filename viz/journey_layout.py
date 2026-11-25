@@ -1,18 +1,18 @@
-"""Panorama yerlesimi: katman kareleri (durak + en yakin k token) ortak tokenlarindan tek sabit 2B haritaya dikilir.
+"""Panorama layout: layer frames (a stop + its nearest k tokens) are stitched into one fixed 2D map through the tokens they share.
 
 layout(R, DT, DS, M) -> dict
-  R  [L,n]  durak-token uzakligi (1-kosinus)      DT [n,n] token-token      DS [L,L] durak-durak
-  M  [L,n]  bool; token o duragin en yakin k'sinda mi. M[l] satirlari R[l]'nin en kucuk degerleri olmali.
-Donus: X [n,2] tokenlar, S [L,2] duraklar, h [L] cikarilan ortak uzaklik payi, rho [L,n] hedef = R-h, prec [L] isabet
-  h[l] = max(0, min_j R[l,j] - RHO0): tek olcek, katman basina tek sayi cikar -> komsu sirasi ve farklari korunur;
-  zaten yakin bir komsusu olan katmanda (gomme) h=0, uzakliklar aynen kalir.
-Yontem: Isomap baslangici (cizge en kisa yollari + klasik MDS) -> esdeger oncelikli stres (uye halkalari, uye olmayanlar disarida).
-A [L-1] (istege bagli): ardisik duraklarin arasindaki aci (rad); haritada adim = c*A hedeflenir (agirlik ws).
-wn: Sammon tarzi agirlik; ham uzakligi kucuk ciftler (tokenin kendisi gibi) daha guvenilir, daha cok tartilir.
-wb: bukulme cezasi (ardisik birim adim farki).
-K [L] bool + wr: bu duraklarda en yakin TOP tokenin sirasi korunur (r'inci komsu, kendinden uzak her tokendan en az GAP
-daha yakin olsun; R'de esit olanlar birbirini itmez).
-Ayni tohumla belirlenimci."""
+  R  [L,n]  stop-token distance (1-cosine)      DT [n,n] token-token      DS [L,L] stop-stop
+  M  [L,n]  bool; is the token among that stop's nearest k. M[l] must mark the smallest values of R[l].
+Returns: X [n,2] tokens, S [L,2] stops, h [L] common distance removed, rho [L,n] target = R-h, prec [L] hit rate
+  h[l] = max(0, min_j R[l,j] - RHO0): one scale, one number removed per layer -> the order and differences of neighbours are kept;
+  in a layer that already has a close neighbour (the embedding) h=0 and distances stay as they are.
+Method: Isomap start (graph shortest paths + classical MDS) -> equal-priority stress (member rings, non-members outside).
+A [L-1] (optional): angle between consecutive stops (rad); on the map the target step is c*A (weight ws).
+wn: Sammon-style weight; pairs with a small raw distance (such as the token itself) are more reliable and weigh more.
+wb: bending penalty (difference of consecutive unit steps).
+K [L] bool + wr: at these stops the order of the nearest TOP tokens is kept (the r-th neighbour must be at least GAP closer
+than every token farther than it; ties in R do not push each other).
+Deterministic for a given seed."""
 import torch
 
 RHO0, MARGIN, TOP, GAP = 0.02, 0.06, 5, 0.004
@@ -24,7 +24,7 @@ def precision(S, X, M):
     return out
 
 def order_acc(S, X, R, top=3):
-    """Durak basina (en yakin dogru mu, gercek ilk `top` tokenin haritada ilk `top` icinde olani)."""
+    """Per stop (is the nearest one right, share of the true first `top` tokens that are in the map's first `top`)."""
     d = torch.cdist(S, X); out = []
     for l in range(len(S)):
         a, b = R[l].topk(top, largest=False).indices.tolist(), d[l].topk(top, largest=False).indices.tolist()
@@ -37,7 +37,7 @@ def _isomap(G):
     J = torch.eye(N) - 1.0 / N
     w, U = torch.linalg.eigh(-0.5 * J @ G ** 2 @ J)
     P = U[:, -2:] * w[-2:].clamp_min(0).sqrt()
-    for c in range(2):  # isaret sabitle
+    for c in range(2):  # fix the sign
         if P[P[:, c].abs().argmax(), c] < 0: P[:, c] *= -1
     return P
 
@@ -69,7 +69,7 @@ def layout(R, DT, DS, M, steps=1500, wt=0.002, wp=0.3, noise=0.0, seed=0, A=None
             opt.zero_grad(); S, X = Q[:L], Q[L:]
             ds = (((S[:, None] - X[None]) ** 2).sum(-1) + 1e-6).sqrt()
             dx = (((X[:, None] - X[None]) ** 2).sum(-1) + 1e-6).sqrt()
-            ramp = min(1.0, t / (steps * 0.4))  # uye olmayan itmesi kademeli: tokenlar birbirinin icinden gecebilsin
+            ramp = min(1.0, t / (steps * 0.4))  # push from non-members grows gradually so that tokens can pass through each other
             loss = (Mf * wm * (ds - rho) ** 2).sum() + ramp * ((1 - Mf) * (lim - ds).clamp_min(0) ** 2).sum() * 2.0
             loss = loss + wt * (tri * wT * (dx - DT) ** 2).sum() + wp * (tri * (0.05 - dx).clamp_min(0) ** 2).sum()
             if A is not None: loss = loss + ws * ((((S[1:] - S[:-1]) ** 2).sum(-1) + 1e-6).sqrt() - c * A).pow(2).sum()
@@ -82,8 +82,8 @@ def layout(R, DT, DS, M, steps=1500, wt=0.002, wp=0.3, noise=0.0, seed=0, A=None
     return {"X": X, "S": S, "h": h, "rho": rho, "prec": precision(S, X, M), "err": err}
 
 def slerp_stops(V, step):
-    """V [K,d] birim vektorler -> (P [L,d] birim, ts [L] katman konumu, A [L-1] aci). Her V ciftinin arasi
-    en kisa yay uzerinde ~step radyanlik esit parcalara bolunur (en az 2, yani her arada en az bir nokta); V'ler aynen icinde."""
+    """V [K,d] unit vectors -> (P [L,d] unit, ts [L] layer position, A [L-1] angle). The stretch between each pair of V
+    is split on the shortest arc into equal parts of ~step radians (at least 2, i.e. at least one point in each stretch); the V are kept as they are."""
     P, ts, A = [], [], []
     for l in range(len(V) - 1):
         th = torch.acos((V[l] @ V[l + 1]).clamp(-1, 1)); N = max(2, round(float(th) / step))
@@ -93,7 +93,7 @@ def slerp_stops(V, step):
     return torch.stack(P + [V[-1]]), ts + [float(len(V) - 1)], torch.tensor(A)
 
 def best(R, DT, DS, M, A=None, K=None, wr=0.0):
-    """Dort sabit baslangic; isabeti (K verilmisse K duraklarindaki sira dogrulugu da) en yuksek olan."""
+    """Four fixed starts; the one with the highest hit rate (plus the order accuracy at the K stops if K is given)."""
     init = _isomap(_graph(R, DT, DS, M, A, 0.2))
     run = lambda nz, s: layout(R, DT, DS, M, wt=0.001, noise=nz, seed=s, A=A, ws=10.0, wb=0.1, init=init, K=K, wr=wr)
     def score(o):

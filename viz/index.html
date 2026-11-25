@@ -1,33 +1,33 @@
-<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Gemma 3 Embedding Görselleştirici</title><link rel="icon" href="data:,"><link rel="stylesheet" href="/ui/style.css"></head><body>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LLM Visualizer</title><link rel="icon" href="data:,"><link rel="stylesheet" href="/ui/style.css"></head><body>
 <div class="app">
-<nav aria-label="Görünümler" id="nav"><div class="brand">Embedding Görselleştirici<small>Gemma 3 270M</small></div><button id="theme" type="button"></button></nav>
+<nav aria-label="Views" id="nav"><div class="brand">LLM Visualizer<small>Gemma 3 270M</small></div><button id="theme" type="button"></button></nav>
 <main>
  <header><h1 id="title"></h1><p class="desc" id="desc"></p></header>
- <form id="form"><input id="q" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="go"><button class="pri" id="go">Göster</button></form>
+ <form id="form"><input id="q" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="go"><button class="pri" id="go">Show</button></form>
  <div class="tools" id="tools">
-  <label data-for="line ring heat"><input type="checkbox" id="diff"> İlk kelimeden farkı çiz</label>
-  <button class="btn" type="button" id="var" data-for="line ring heat scatter bars mid">Yazım varyantları</button>
-  <label data-for="axes"><input type="checkbox" id="axok"> Yalnızca sınanmış uçlar</label>
-  <label data-for="nb mid ctx">Komşu sayısı <input type="number" id="nk" min="5" max="100"></label>
-  <label data-for="mid">Keskinlik <input type="range" id="nt" min="2" max="40" value="12"></label>
-  <label data-for="nb mid journey jtoken"><input type="checkbox" id="nasc" checked> Yalnızca harf tokenları</label>
-  <label data-for="mid"><input type="checkbox" id="nv" checked> Yazdığım kelimelerin varyantlarını gizle</label>
+  <label data-for="line ring heat"><input type="checkbox" id="diff"> Plot the difference from the first word</label>
+  <button class="btn" type="button" id="var" data-for="line ring heat scatter bars mid">Spelling variants</button>
+  <label data-for="axes"><input type="checkbox" id="axok"> Tested ends only</label>
+  <label data-for="nb mid ctx">Number of neighbors <input type="number" id="nk" min="5" max="100"></label>
+  <label data-for="mid">Sharpness <input type="range" id="nt" min="2" max="40" value="12"></label>
+  <label data-for="nb mid journey jtoken"><input type="checkbox" id="nasc" checked> Letter tokens only</label>
+  <label data-for="mid"><input type="checkbox" id="nv" checked> Hide variants of my words</label>
   <div class="ex" id="ex"></div>
  </div>
  <div class="stage" id="wrap"><canvas id="c" role="img"></canvas><div class="zoom" id="zoom">
-   <button class="btn" type="button" id="jfix" aria-pressed="false">Tüm harita</button><button class="btn" type="button" id="zin" aria-label="Yakınlaştır">+</button><button class="btn" type="button" id="zout" aria-label="Uzaklaştır">−</button><button class="btn" type="button" id="reset">Sıfırla</button></div>
+   <button class="btn" type="button" id="jfix" aria-pressed="false">Whole map</button><button class="btn" type="button" id="zin" aria-label="Zoom in">+</button><button class="btn" type="button" id="zout" aria-label="Zoom out">−</button><button class="btn" type="button" id="reset">Reset</button></div>
   <div id="tip" hidden></div><div class="over" id="over" role="status" hidden></div></div>
  <div class="player" id="pj" hidden>
-  <div class="ctl"><button class="btn ico" type="button" id="jprev" aria-label="Önceki durak"><svg viewBox="0 0 16 16"><path d="M3 2h2v12H3zM14 2v12L6 8z"/></svg></button><button class="btn ico" type="button" id="jplay" aria-label="Oynat"></button><button class="btn ico" type="button" id="jnext" aria-label="Sonraki durak"><svg viewBox="0 0 16 16"><path d="M11 2h2v12h-2zM2 2v12l8-6z"/></svg></button></div>
-  <div class="scrub"><input type="range" id="jl" min="0" max="18" step="0.01" value="0" aria-label="Yolculuk konumu"><div class="ticks" id="jt"></div></div>
-  <div class="ctl tools"><label>Hız <select id="jsp"><option value="0.25">0,25×</option><option value="0.5">0,5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option></select></label></div>
+  <div class="ctl"><button class="btn ico" type="button" id="jprev" aria-label="Previous stop"><svg viewBox="0 0 16 16"><path d="M3 2h2v12H3zM14 2v12L6 8z"/></svg></button><button class="btn ico" type="button" id="jplay" aria-label="Play"></button><button class="btn ico" type="button" id="jnext" aria-label="Next stop"><svg viewBox="0 0 16 16"><path d="M11 2h2v12h-2zM2 2v12l8-6z"/></svg></button></div>
+  <div class="scrub"><input type="range" id="jl" min="0" max="18" step="0.01" value="0" aria-label="Journey position"><div class="ticks" id="jt"></div></div>
+  <div class="ctl tools"><label>Speed <select id="jsp"><option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option></select></label></div>
  </div>
  <div class="player" id="pc" hidden>
-  <div class="ctl"><button class="btn ico" type="button" id="cprev" aria-label="Önceki token"><svg viewBox="0 0 16 16"><path d="M3 2h2v12H3zM14 2v12L6 8z"/></svg></button><button class="btn ico" type="button" id="ctplay" aria-label="Katmanlar boyunca oynat"></button><button class="btn ico" type="button" id="cnext" aria-label="Sonraki token"><svg viewBox="0 0 16 16"><path d="M11 2h2v12h-2zM2 2v12l8-6z"/></svg></button></div>
+  <div class="ctl"><button class="btn ico" type="button" id="cprev" aria-label="Previous token"><svg viewBox="0 0 16 16"><path d="M3 2h2v12H3zM14 2v12L6 8z"/></svg></button><button class="btn ico" type="button" id="ctplay" aria-label="Play through the layers"></button><button class="btn ico" type="button" id="cnext" aria-label="Next token"><svg viewBox="0 0 16 16"><path d="M11 2h2v12h-2zM2 2v12l8-6z"/></svg></button></div>
   <div class="strip" id="cstrip"></div>
  </div>
 </main>
-<aside class="side" id="side" aria-label="Ayrıntılar"></aside>
+<aside class="side" id="side" aria-label="Details"></aside>
 </div>
 <script src="/ui/geo.js"></script><script src="/ui/app.js"></script></body></html>

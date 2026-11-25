@@ -1,10 +1,10 @@
-"""Model dosyalarını hazırlar: eksikse Unsloth'un açık Hugging Face kopyasından, sabit bir sürümden, anahtarsız indirir.
+"""Prepares the model files: if missing, downloads them from Unsloth's public Hugging Face copy, at a fixed revision, without a key.
 
-Eksen verisi (axes.json, axes.pt) bu sürümün ağırlıklarından üretildi; sürüm değişirse onlar da yeniden üretilmelidir."""
+The axis data (axes.json, axes.pt) was produced from this revision's weights; if the revision changes, it must be produced again."""
 import hashlib, os
 
 REPO, REVISION = "unsloth/gemma-3-270m-it", "23cf460f6bb16954176b3ddcc8d4f250501458a9"
-FILES = {  # ad: (bayt, sha256)
+FILES = {  # name: (bytes, sha256)
     "added_tokens.json": (35, "50b2f405ba56a26d4913fd772089992252d7f942123cc0a034d96424221ba946"),
     "chat_template.jinja": (1654, "af95fbef33b76a50e5f463ff9766f85ce84f5849d915c4bd6c1619d852ac3231"),
     "config.json": (1374, "2706d3533059c6e1086badab27cc234e8ca2228975c3f73eeaef7f57cb5ec1db"),
@@ -17,10 +17,10 @@ FILES = {  # ad: (bayt, sha256)
 }
 
 class ModelError(Exception):
-    """Kullanıcıya gösterilecek, düz metin hata."""
+    """Plain-text error to be shown to the user."""
 
 def missing(d, files=FILES):
-    """d klasöründe bulunmayan ya da boyutu tutmayan dosyaların adları (FILES sırasıyla). Ağ kullanmaz."""
+    """Names of the files that are not in folder d or have the wrong size (in FILES order). Does not use the network."""
     def ok(n):
         p = os.path.join(d, n)
         return os.path.isfile(p) and os.path.getsize(p) == files[n][0]
@@ -30,26 +30,26 @@ def sha256(path):
     with open(path, "rb") as f: return hashlib.file_digest(f, "sha256").hexdigest()
 
 def hub_fetch(d, names):
-    """names dosyalarını sabit sürümden d'ye indirir. Anahtar göndermez."""
+    """Downloads the files in names from the fixed revision into d. Sends no key."""
     from huggingface_hub import snapshot_download
     snapshot_download(REPO, revision=REVISION, local_dir=d, allow_patterns=names, token=False)
 
 def ensure(d, fetch=hub_fetch, files=FILES, say=print):
-    """d içinde model tam ise hiçbir şey yapmaz (ağa çıkmaz). Değilse eksikleri fetch(d, adlar) ile indirir,
-    boyut ve sha256 denetler. İndirilen dosya adlarını döndürür. Olmazsa ModelError.
-    Özeti tutmayan, yeni indirilmiş dosya silinir ki sonraki açılış yeniden indirsin."""
+    """Does nothing (no network) if the model in d is complete. Otherwise downloads what is missing with fetch(d, names)
+    and checks size and sha256. Returns the names of the downloaded files. Raises ModelError on failure.
+    A newly downloaded file with the wrong hash is deleted so that the next start downloads it again."""
     need = missing(d, files)
     if not need: return []
-    say("Model indiriliyor: %s (%d dosya, %.0f MB). Yalnızca ilk açılışta." % (REPO, len(need), sum(files[n][0] for n in need) / 1e6), flush=True)
+    say("Downloading the model: %s (%d files, %.0f MB). First start only." % (REPO, len(need), sum(files[n][0] for n in need) / 1e6), flush=True)
     try:
         os.makedirs(d, exist_ok=True)
         fetch(d, need)
     except Exception as e:
-        raise ModelError("Model indirilemedi (%s: %s). İnternet bağlantısını ve boş diski denetleyip yeniden başlatın; eksik dosyalar yeniden istenir." % (type(e).__name__, e)) from e
+        raise ModelError("Could not download the model (%s: %s). Check the internet connection and free disk space, then start again; missing files will be requested again." % (type(e).__name__, e)) from e
     left = missing(d, files)
-    if left: raise ModelError("İndirme eksik kaldı: " + ", ".join(left) + ". Bu dosyaları " + os.path.abspath(d) + " içinden silip yeniden başlatın.")
+    if left: raise ModelError("The download is incomplete: " + ", ".join(left) + ". Delete these files from " + os.path.abspath(d) + " and start again.")
     bad = [n for n in need if sha256(os.path.join(d, n)) != files[n][1]]
     for n in bad: os.remove(os.path.join(d, n))
-    if bad: raise ModelError("İndirilen dosyanın özeti tutmadı: " + ", ".join(bad) + ". Yeniden başlatınca tekrar indirilecek.")
-    say("Model hazır.", flush=True)
+    if bad: raise ModelError("Wrong hash for the downloaded file: " + ", ".join(bad) + ". It will be downloaded again on the next start.")
+    say("Model ready.", flush=True)
     return need

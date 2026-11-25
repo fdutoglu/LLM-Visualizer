@@ -1,5 +1,5 @@
-"""Embedding görselleştirici sunucusu.  server.py [port] [--host ADRES]
-Varsayılan yalnızca bu bilgisayar (127.0.0.1); ağdaki cihazlar için --host 0.0.0.0. İnternete açmak için tasarlanmadı."""
+"""Embedding visualizer server.  server.py [port] [--host ADDRESS]
+By default only this computer (127.0.0.1); use --host 0.0.0.0 for devices on your network. Not designed to be exposed to the internet."""
 import argparse, math, json, sys, os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
@@ -9,10 +9,10 @@ sys.path.insert(0, HERE)
 import journey_layout, modelfiles
 MODEL = os.path.join(HERE, "..", "model")
 ARGS = None
-if __name__ == "__main__":  # model indirmeden önce: hatalı bayrak ya da --help hemen yanıtlanır
-    ap = argparse.ArgumentParser(description="Gemma 3 embedding görselleştirici")
+if __name__ == "__main__":  # before the model download, so that a bad flag or --help is answered right away
+    ap = argparse.ArgumentParser(description="Gemma 3 embedding visualizer")
     ap.add_argument("port", nargs="?", type=int, default=8791)
-    ap.add_argument("--host", default="127.0.0.1", help="ağa açmak için 0.0.0.0")
+    ap.add_argument("--host", default="127.0.0.1", help="0.0.0.0 to listen on the network")
     ARGS = ap.parse_args()
 try: modelfiles.ensure(MODEL)
 except modelfiles.ModelError as e: sys.exit(str(e))
@@ -35,8 +35,8 @@ def ref_of(t):
 def base(t): return t.lstrip("▁").lower()
 
 def between(ids, k, letters_only, hide_variants):
-    """Capalarin (ids) 'arasinda' kalan tokenlar: her capaya birden yakin olanlar.
-    Skor = capalara kosinuslarin en kucugu (maximin), yani hepsine birden yakinlik."""
+    """Tokens 'in between' the anchors (ids): those close to every anchor at once.
+    Score = the smallest cosine to the anchors (maximin), i.e. closeness to all of them together."""
     A = E[ids].float(); A = A / A.norm(dim=1, keepdim=True)
     S = torch.cat([(E[s:s + CH].float() @ A.T) / NORMS[s:s + CH, None] for s in range(0, V, CH)])  # [V, n]
     score = S.min(dim=1).values
@@ -52,8 +52,8 @@ def between(ids, k, letters_only, hide_variants):
     return {"anchors": [{"token": IDS[i], "id": i, "ref": ref_of(IDS[i])} for i in ids], "pts": out}
 
 def neighbors(i, k, letters_only):
-    """i'nin kosinus olarak en yakin k tokeni + 2B yerlesim.
-    Merkeze (i) uzaklik = 1 - kosinus (tam); aci = klasik MDS'in (tum ikili 1-kosinus uzakliklarindan) verdigi yon."""
+    """The k tokens nearest to i by cosine + a 2D layout.
+    Distance to the centre (i) = 1 - cosine (exact); angle = the direction given by classical MDS (on all pairwise 1-cosine distances)."""
     v = E[i].float()
     sims = torch.cat([E[s:s + CH].float() @ v for s in range(0, V, CH)]) / NORMS / NORMS[i]
     if letters_only: sims = torch.where(LETTER, sims, torch.full_like(sims, -2.0))
@@ -83,7 +83,7 @@ def lm():
     return _LM
 
 def ctx(text, layer, k, letters_only):
-    """Cumle icin her onek konumunda gizli durumun (odak) en yakin tokenlari + ortak 2B yerlesim."""
+    """For a sentence: the tokens nearest to the hidden state (focus) at every prefix position."""
     m = lm()
     enc = tok(text, return_tensors="pt", truncation=True, max_length=48)
     with torch.no_grad():
@@ -108,13 +108,13 @@ def ctx(text, layer, k, letters_only):
         steps.append({"tok": toks[t], "id": ids[t], "nn": [{"i": j, "cos": round(cos[j].item(), 4), "p": round(p[j].item(), 5)} for j in top]})
         nnset += top
     nn_ids = list(dict.fromkeys(nnset))
-    return {"tokens": toks, "steps": steps, "layer": layer, "nlayers": nl}   # eski gorunum: harita yok (istemci artik /api/ctx3 kullanir)
+    return {"tokens": toks, "steps": steps, "layer": layer, "nlayers": nl}   # old view: no map (the client now uses /api/ctx3)
 
 _RUN = threading.Lock()
 def ctx3(text, layer=None, k=8):
-    """Her token icin 2 nokta: gomme (giris) ve son katman cikisi (son norm sonrasi, tahmini belirleyen vektor).
-    Her noktanin yerel uzayi: en yakin k token, merkeze uzaklik r = 1 - kosinus (tam), aci = yerel klasik MDS.
-    Noktalarin kendi aralarindaki global 2B yerlesimi de doner."""
+    """Two points per token: the embedding (input) and the last layer's output (after the final norm, the vector that decides the prediction).
+    Local space of each point: the nearest k tokens, distance to the centre r = 1 - cosine (exact), angle = local classical MDS.
+    The global 2D layout of the points among themselves is returned too."""
     m = lm(); k = max(1, min(30, k))
     enc = tok(text, return_tensors="pt", truncation=True, max_length=48)
     nl = len(m.model.layers)
@@ -122,7 +122,7 @@ def ctx3(text, layer=None, k=8):
     ids = enc["input_ids"][0].tolist(); toks = tok.convert_ids_to_tokens(ids)
     st = 1 if toks and toks[0] == tok.bos_token else 0
     emb = out.hidden_states[0][0].float()[st:]
-    fin = out.hidden_states[-1][0].float()[st:]          # HF: son eleman zaten son normdan gecmis
+    fin = out.hidden_states[-1][0].float()[st:]          # HF: the last element has already been through the final norm
     toks = toks[st:]; n = len(toks)
     V2 = torch.cat([emb, fin]); X = V2 / V2.norm(dim=1, keepdim=True).clamp_min(1e-9)
     N = 2 * n; D = (1 - X @ X.T).clamp_min(0); D.fill_diagonal_(0)
@@ -154,16 +154,16 @@ def ctx3(text, layer=None, k=8):
     return {"tokens": toks, "steps": steps, "layer": nl, "nlayers": nl, "stress": round(stress, 4)}
 
 def traj(text, t, k=12):
-    """Bir tokenin gomme noktasindan son katman cikisina katman katman yolu (logit lens: son normdan gecmis hali).
-    Sabit bir cerceve: son cikisa en yakin k token + tokenin kendisi; cerceve klasik MDS ile 2B, her katmandaki nokta
-    cerceveye Gower dis-ornek izdusumuyle yerlestirilir (kosinus uzakliklari)."""
+    """A token's layer-by-layer path from its embedding to the last layer's output (logit lens: after the final norm).
+    One fixed frame: the k tokens nearest to the final output + the token itself; the frame is laid out in 2D with classical MDS and each layer's
+    point is placed in it by Gower's out-of-sample projection (cosine distances)."""
     m = lm(); k = max(3, min(30, k))
     enc = tok(text, return_tensors="pt", truncation=True, max_length=48)
     with _RUN, torch.no_grad(): out = m(**enc, output_hidden_states=True)
     ids = enc["input_ids"][0].tolist(); toks = tok.convert_ids_to_tokens(ids)
     st = 1 if toks and toks[0] == tok.bos_token else 0
     n = len(ids) - st
-    if not 0 <= t < n: return {"error": "token yok"}
+    if not 0 <= t < n: return {"error": "No such token"}
     hs = out.hidden_states; nl = len(hs) - 1
     with torch.no_grad():
         vecs = [hs[0][0, st + t].float()] + [m.model.norm(hs[l][0, st + t]).float() for l in range(1, nl)] + [hs[nl][0, st + t].float()]
@@ -185,20 +185,20 @@ def traj(text, t, k=12):
             "own": frame.index(own), "layers": layers}
 
 def journey(text, k=20, letters_only=True, by="layer"):
-    """Duraklarin ve ara noktalarin en yakin k tokeni, tek sabit 2B haritada (journey_layout).
-    by="layer": durak = son tokenin her katmandaki vektoru (logit lens). by="token": durak = her girdi tokeninin
-    son katman ciktisi (<bos> haric); nedensel maske sayesinde tek calistirma her onekin sonucunu verir."""
+    """The nearest k tokens of the stops and of the points in between, on one fixed 2D map (journey_layout).
+    by="layer": a stop = the last token's vector at each layer (logit lens). by="token": a stop = the last-layer output
+    of each input token (without <bos>); thanks to the causal mask one run gives the result of every prefix."""
     m = lm(); k = max(3, min(24, k))
     enc = tok(text, return_tensors="pt", truncation=True, max_length=48)
     with _RUN, torch.no_grad(): out = m(**enc, output_hidden_states=True)
     hs = out.hidden_states; nl = len(hs) - 1; ids = enc["input_ids"][0].tolist()
     if by == "token":
         own = ids[1:] if ids[0] == tok.bos_token_id else ids; VN = hs[nl][0, -len(own):].float()
-        if not own: raise ValueError("metin bos")
+        if not own: raise ValueError("The text is empty")
     else:
         own = [ids[-1]] * (nl + 1)
         with torch.no_grad(): VN = torch.stack([hs[0][0, -1].float()] + [m.model.norm(hs[l][0, -1]).float() for l in range(1, nl)] + [hs[nl][0, -1].float()])
-    VN, ts, A = journey_layout.slerp_stops(VN / VN.norm(dim=1, keepdim=True).clamp_min(1e-9), 0.157)  # ~9 derece
+    VN, ts, A = journey_layout.slerp_stops(VN / VN.norm(dim=1, keepdim=True).clamp_min(1e-9), 0.157)  # ~9 degrees
     tops, meta = [], []
     for a, v in enumerate(VN):
         tid = own[int(ts[a])]
@@ -211,14 +211,14 @@ def journey(text, k=20, letters_only=True, by="layer"):
     DT = (1 - EU @ EU.T).clamp_min(0).fill_diagonal_(0); DS = (1 - VN @ VN.T).clamp_min(0).fill_diagonal_(0)
     Mb = torch.zeros(len(VN), len(U), dtype=torch.bool)
     for l, t in enumerate(tops): Mb[l, [idx[x] for x in t]] = True
-    o = journey_layout.best((1 - VN @ EU.T).clamp_min(0), DT, DS, Mb, A, torch.tensor([t % 1 == 0 for t in ts]), 1.0)  # katman duraklarinda sira korunur
+    o = journey_layout.best((1 - VN @ EU.T).clamp_min(0), DT, DS, Mb, A, torch.tensor([t % 1 == 0 for t in ts]), 1.0)  # order is preserved at the stops
     layers = [{"t": round(ts[l], 4), "m": [int(x) for x in Mb[l].tolist()], **meta[l],
                "h": round(o["h"][l].item(), 3), "prec": round(o["prec"][l], 2)} for l in range(len(ts))]
     rd = lambda P: [[round(x, 4) for x in p] for p in P.tolist()]
     return {"by": by, "tok": IDS[own[-1]], "seg": [IDS[x] for x in own] if by == "token" else None, "tokens": [IDS[x] for x in U], "layers": layers, "nl": len(own) - 1, "k": k, "tx": rd(o["X"]), "path": rd(o["S"])}
 
 def resolve(q):
-    """'king' -> '▁king' (yoksa 'king'); '_king' -> '▁king' birebir; '#9615' -> id; 'king' disinda '=king' -> '▁'siz birebir."""
+    """'king' -> '▁king' (otherwise 'king'); '_king' -> exactly '▁king'; '#9615' -> id; '=king' -> exactly 'king', without '▁'."""
     q = q.strip()
     if q.startswith("#") and q[1:].isdigit():
         i = int(q[1:]); return i if i < V else None
@@ -257,7 +257,7 @@ class H(BaseHTTPRequestHandler):
             for q in qs.get("q", [""])[0].split(","):
                 if not q.strip(): continue
                 i = resolve(q)
-                if i is None: out.append({"query": q.strip(), "error": "sozlukte yok"}); continue
+                if i is None: out.append({"query": q.strip(), "error": "Not in the vocabulary"}); continue
                 out.append({"query": q.strip(), "id": i, "token": tok.convert_ids_to_tokens(i),
                             "vec": [round(x, 5) for x in E[i].float().tolist()]})
             return self.send(200, json.dumps(out))
@@ -265,34 +265,34 @@ class H(BaseHTTPRequestHandler):
             names = [s for s in qs.get("q", [""])[0].split(",") if s.strip()]
             ids = [resolve(s) for s in names]
             bad = [n.strip() for n, i in zip(names, ids) if i is None]
-            if bad: return self.send(200, json.dumps({"error": "sozlukte yok: " + ", ".join(bad)}))
+            if bad: return self.send(200, json.dumps({"error": "Not in the vocabulary: " + ", ".join(bad)}))
             ids = list(dict.fromkeys(ids))
-            if not 2 <= len(ids) <= 8: return self.send(200, json.dumps({"error": "2 ile 8 arasinda token gerekli"}))
+            if not 2 <= len(ids) <= 8: return self.send(200, json.dumps({"error": "2 to 8 tokens required"}))
             try: k = max(5, min(100, int(qs.get("k", ["30"])[0])))
             except ValueError: k = 30
             return self.send(200, json.dumps(between(ids, k, qs.get("letters", ["1"])[0] == "1", qs.get("hide", ["1"])[0] == "1")))
-        if u.path == "/api/axes":  # q yoksa yon listesi; varsa kelimenin 640 yondeki puani
+        if u.path == "/api/axes":  # without q: the list of directions; with q: the word's score on the 640 directions
             m, P, keep, rec, brief = axes_data()
             if "q" not in qs: return self.send(200, brief)
             i = resolve(qs["q"][0])
-            if i is None: return self.send(200, json.dumps({"error": "sozlukte yok"}))
+            if i is None: return self.send(200, json.dumps({"error": "Not in the vocabulary"}))
             z = (E[i].float() - m) @ P
             return self.send(200, json.dumps({"id": i, "token": IDS[i], "ref": ref_of(IDS[i]), "in": i in keep, "z": [round(v, 3) for v in z.tolist()]}))
         if u.path == "/api/axis":
             try: d = int(qs.get("d", ["-1"])[0])
             except ValueError: d = -1
             rec = axes_data()[3]
-            if not 0 <= d < len(rec): return self.send(200, json.dumps({"error": "yon numarasi 0-639 olmali"}))
+            if not 0 <= d < len(rec): return self.send(200, json.dumps({"error": "The direction number must be 0-639"}))
             return self.send(200, json.dumps(dict(rec[d], ends=[dict(e, top=[[t, s, ref_of(t) if "," not in t and resolve(ref_of(t)) == r else "#%d" % r] for r, t, s in e["top"]]) for e in rec[d]["ends"]])))
         if u.path == "/api/neighbors":
             i = resolve(qs.get("q", [""])[0])
-            if i is None: return self.send(200, json.dumps({"error": "sozlukte yok"}))
+            if i is None: return self.send(200, json.dumps({"error": "Not in the vocabulary"}))
             try: k = max(5, min(100, int(qs.get("k", ["30"])[0])))
             except ValueError: k = 30
             return self.send(200, json.dumps(neighbors(i, k, qs.get("letters", ["1"])[0] == "1")))
         if u.path == "/api/ctx":
             text = qs.get("q", [""])[0].strip()
-            if not text: return self.send(200, json.dumps({"error": "cumle bos"}))
+            if not text: return self.send(200, json.dumps({"error": "The sentence is empty"}))
             try: k = max(3, min(30, int(qs.get("k", ["10"])[0])))
             except ValueError: k = 10
             try: layer = int(qs.get("layer", ["99"])[0])
@@ -300,22 +300,22 @@ class H(BaseHTTPRequestHandler):
             return self.send(200, json.dumps(ctx(text, layer, k, qs.get("letters", ["1"])[0] == "1")))
         if u.path == "/api/journey":
             text = qs.get("q", [""])[0].strip()
-            if not text: return self.send(200, json.dumps({"error": "cumle bos"}))
+            if not text: return self.send(200, json.dumps({"error": "The sentence is empty"}))
             try: kk = int(qs.get("k", ["12"])[0])
             except ValueError: kk = 12
             return self.send(200, json.dumps(journey(text, kk, qs.get("letters", ["1"])[0] == "1", "token" if qs.get("by", [""])[0] == "token" else "layer")))
         if u.path == "/api/traj":
             text = qs.get("q", [""])[0].strip()
             try: tt = int(qs.get("t", ["0"])[0]); kk = int(qs.get("k", ["12"])[0])
-            except ValueError: return self.send(200, json.dumps({"error": "t sayi olmali"}))
+            except ValueError: return self.send(200, json.dumps({"error": "t must be a number"}))
             return self.send(200, json.dumps(traj(text, tt, kk)))
         if u.path == "/api/ctx3":
             text = qs.get("q", [""])[0].strip()
-            if not text: return self.send(200, json.dumps({"error": "cumle bos"}))
+            if not text: return self.send(200, json.dumps({"error": "The sentence is empty"}))
             try: layer = int(qs.get("layer", ["1"])[0])
             except ValueError: layer = 1
             return self.send(200, json.dumps(ctx3(text, layer, int(qs.get("k", ["8"])[0]))))
-        if u.path == "/api/variants":  # bir kelimenin sozlukteki yazim varyantlari
+        if u.path == "/api/variants":  # spelling variants of a word that are in the vocabulary
             w = qs.get("q", [""])[0].strip().lstrip("_=#").lower()
             vs = []
             for c in {w, w.capitalize(), w.upper()}:

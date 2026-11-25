@@ -1,5 +1,5 @@
-"""Yönleri eğitim yarısında etiketle, test yarısında sına. Ölçütler ölçümden önce sabitlendi:
-geçer = test AUC >= .90 VE P@n (n=min(50,test pozitifi)) >= .50 (taban oranı <= .2 ise; değilse >= .95). Etiket için testte >= 15 pozitif."""
+"""Label the directions on the training half, test them on the test half. The criteria were fixed before measuring:
+pass = test AUC >= .90 AND P@n (n=min(50,test positives)) >= .50 (if the base rate is <= .2; otherwise >= .95). A label needs >= 15 test positives."""
 import sys, os, json, time, torch
 H = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, H)
 import core as c, labels
@@ -11,7 +11,7 @@ IDS = tok.convert_ids_to_tokens(list(range(E.shape[0])))
 def load():
     keep, B, L = labels.build(IDS); X = E[keep].float(); tr = c.split_groups(B); return keep, B, L, X, tr
 def evalset(S, tr, L, shuf=None):
-    """Her eksen için eğitimde en iyi (etiket, uç); test puanı. shuf: etiketleri arka plan içinde, yarı içinde karıştır."""
+    """For each axis the best (label, end) on training; test score. shuf: shuffle the labels within the background and within the half."""
     names = list(L); D = S.shape[1]; R = {}
     for half, m in (("tr", tr), ("te", ~tr)):
         A = torch.zeros(D, len(names)); Pp = torch.zeros(D, len(names)); Pn = Pp.clone(); N = torch.zeros(len(names)); base = N.clone()
@@ -32,19 +32,19 @@ def evalset(S, tr, L, shuf=None):
     return out
 if __name__ == "__main__":
     t0 = time.time(); keep, B, L, X, tr = load(); L = {k: (torch.tensor(a), torch.tensor(b)) for k, (a, b) in L.items()}
-    print("token", len(keep), "egitim", int(tr.sum()), "etiket", len(L), {k: int((a & b).sum()) for k, (a, b) in L.items()})
-    m, U, w = c.whiten(X[tr].double()); print("PCA pay", [round(float(w[:k].sum() / w.sum()), 3) for k in (1, 2, 10, 50, 100, 300)])
-    Wh = (U / w.sqrt()).float(); m = m.float(); Z = (X - m) @ Wh; ms = {"ham": X - m, "pca": Z}
-    g = torch.Generator().manual_seed(9); ms["rastgele-ham"] = (X - m) @ torch.linalg.qr(torch.randn(640, 640, generator=g))[0]
-    ms["rastgele-beyaz"] = Z @ torch.linalg.qr(torch.randn(640, 640, generator=g))[0]
+    print("token", len(keep), "training", int(tr.sum()), "labels", len(L), {k: int((a & b).sum()) for k, (a, b) in L.items()})
+    m, U, w = c.whiten(X[tr].double()); print("PCA share", [round(float(w[:k].sum() / w.sum()), 3) for k in (1, 2, 10, 50, 100, 300)])
+    Wh = (U / w.sqrt()).float(); m = m.float(); Z = (X - m) @ Wh; ms = {"raw": X - m, "pca": Z}
+    g = torch.Generator().manual_seed(9); ms["random-raw"] = (X - m) @ torch.linalg.qr(torch.randn(640, 640, generator=g))[0]
+    ms["random-white"] = Z @ torch.linalg.qr(torch.randn(640, 640, generator=g))[0]
     Ws = []
     for s in range(3):
         W, it, lim = c.fastica(Z[tr], s, 300); Ws.append(W); print("ica", s, it, f"{lim:.4f}", f"{time.time()-t0:.0f}s", flush=True)
     torch.save(dict(W=Ws, Wh=Wh, m=m, keep=keep), os.path.join(H, "ica.pt"))
     st = torch.minimum(c.match(Ws[0], Ws[1]), c.match(Ws[0], Ws[2])); g2 = torch.linalg.qr(torch.randn(640, 640, generator=g))[0]
-    print("kararli >.9:", int((st > .9).sum()), ">.7:", int((st > .7).sum()), "rastgele en buyuk esleme", float(c.match(Ws[0], g2).max()))
+    print("stable >.9:", int((st > .9).sum()), ">.7:", int((st > .7).sum()), "largest random match", float(c.match(Ws[0], g2).max()))
     ms["ica"] = Z @ Ws[0].T; res = {"stab": st.tolist()}
     for k, S in ms.items():
         r = evalset(S, tr, L); sh = [sum(x["ok"] for x in evalset(S, tr, L, torch.Generator().manual_seed(i))) for i in range(3)]
-        res[k] = r; print(k, "gecen", sum(x["ok"] for x in r), "farkli etiket", len({x["lab"] for x in r if x["ok"]}), "karistirilmis", sh, f"{time.time()-t0:.0f}s", flush=True)
+        res[k] = r; print(k, "passed", sum(x["ok"] for x in r), "distinct labels", len({x["lab"] for x in r if x["ok"]}), "shuffled", sh, f"{time.time()-t0:.0f}s", flush=True)
     json.dump(res, open(os.path.join(H, "result.json"), "w"), ensure_ascii=False)

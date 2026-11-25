@@ -1,10 +1,10 @@
-"""Eksen kaydı (saf fonksiyonlar).
-axis_record(d, stab, lab, ends): lab = result.json satırı {sgn,lab,auc,p,base,ok}; ends = {+1:(p,[kelime]), -1:(p,[kelime])} (ham yön).
- -> {id, flip, stab, ends:[A,B]} ; A = sınavı geçen (yoksa sızdırma puanı yüksek) uç, flip = A'nın ham işareti.
- Uç: {ok, name, label, auc, prec, base, intr, words}. ok = stab>.9 VE (sızdırma>=.9 VEYA bu uçta etiket geçti).
- Etiket alanları yalnız etiketin geçtiği uçta doludur. name = etiket varsa etiket, yoksa ilk 3 kelime.
-top_ends(s, k): s [n] -> (en büyük k indeks, en küçük k indeks; uçtan içe).
-score(v, m, P): tek vektörün birim varyanslı yön puanları."""
+"""Axis record (pure functions).
+axis_record(d, stab, lab, ends): lab = a result.json row {sgn,lab,auc,p,base,ok}; ends = {+1:(p,[word]), -1:(p,[word])} (raw direction).
+ -> {id, flip, stab, ends:[A,B]} ; A = the end that passed the test (otherwise the one with the higher intrusion score), flip = A's raw sign.
+ End: {ok, name, label, auc, prec, base, intr, words}. ok = stab>.9 AND (intrusion>=.9 OR a label passed at this end).
+ Label fields are filled only at the end where the label passed. name = the label if there is one, otherwise the first 3 words.
+top_ends(s, k): s [n] -> (k largest indices, k smallest indices; from the end inwards).
+score(v, m, P): unit-variance direction scores of one vector."""
 import torch
 STAB, INTR = .9, .9
 def end(stab, lab, sg, intr):

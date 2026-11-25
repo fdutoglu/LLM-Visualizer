@@ -1,4 +1,4 @@
-"""Ölçüm çıktılarından görselleştirici verisi: viz/axes.json (kayıtlar + iki uç) ve viz/axes.pt (m, P; A ucu pozitif)."""
+"""Visualizer data from the measurement outputs: viz/axes.json (records + both ends) and viz/axes.pt (m, P; end A is positive)."""
 import json, os, torch, measure as M, axisdata as a
 H = M.H; R = json.load(open(H + "/result.json")); I = json.load(open(H + "/intrude.json"))["ica"]; st = torch.load(H + "/ica.pt")
 ends = {}
@@ -12,6 +12,6 @@ for lo in range(0, 640, 32):
         for e, ix in zip(rec[lo + j]["ends"], a.top_ends(S[:, j], 24)): e["top"] = [[int(keep[i]), M.IDS[keep[i]], round(float(S[i, j]), 2)] for i in ix]
 out = os.path.join(H, "..", "viz"); json.dump(rec, open(out + "/axes.json", "w"), ensure_ascii=False)
 torch.save(dict(m=m, P=P.contiguous(), keep=torch.as_tensor(keep)), out + "/axes.pt")
-print("eksen", len(rec), "sinanmis", sum(any(e["ok"] for e in r["ends"]) for r in rec), "iki ucu da", sum(all(e["ok"] for e in r["ends"]) for r in rec))
+print("axes", len(rec), "tested", sum(any(e["ok"] for e in r["ends"]) for r in rec), "both ends", sum(all(e["ok"] for e in r["ends"]) for r in rec))
 for r in rec:
     if r["ends"][0]["ok"]: print(r["id"], r["ends"][0]["name"], end=" | ")
